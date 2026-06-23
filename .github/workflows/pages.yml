@@ -2,7 +2,7 @@ name: Deploy UnScripted Studio v1.0.0
 
 on:
   push:
-    branches: ["main"]
+  workflow_dispatch:
 
 permissions:
   contents: read
