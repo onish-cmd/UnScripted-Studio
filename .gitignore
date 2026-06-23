@@ -1,0 +1,40 @@
+# --- Frontend / Node dependencies ---
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.js
+frontend/dist/
+
+# --- Vite and Environment Secrets ---
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# --- Editor & System ---
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*~
+.vscode/
+.idea/
+
+# --- Logs ---
+logs
+*.log
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# --- C++ Precompiled Objects & Build Outputs ---
+*.o
+*.obj
+*.out
+*.exe
+build/
+bin/
