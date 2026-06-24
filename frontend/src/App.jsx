@@ -211,9 +211,12 @@ export default function App() {
     const srcText = assemblyEditorRef.current?.value || "";
     const program = srcText
       .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith(";"));
-
+      .map((line) => {
+        const hashIdx = line.indexOf("#");
+        const cleanLine = hashIdx !== -1 ? line.substring(0, hashIdx) : line;
+        return cleanLine.trim();
+      })
+      .filter((line) => line !== "");
     if (program.length === 0) return;
 
     // Set execution flags
@@ -239,6 +242,13 @@ export default function App() {
 
     const stepsPerBatch = 2000; // Chunk size per batch
     let lastUiUpdateTime = performance.now();
+
+    const intermediateRegs = [];
+    for (let r = 0; r < 16; r++) {
+      intermediateRegs.push(cpu.get_reg(r));
+    }
+    setRegs(intermediateRegs);
+    setFlags({ z: cpu.flag_z, n: cpu.flag_n });
 
     const runBatch = () => {
       if (stopRequestedRef.current) {
