@@ -96,6 +96,10 @@ export default function App() {
   const [opcodeArgsCount, setOpcodeArgsCount] = useState(2);
   const [activeSequence, setActiveSequence] = useState([]);
 
+  // Async execution control states
+  const [isRunning, setIsRunning] = useState(false);
+  const stopRequestedRef = useRef(false);
+
   const assemblyEditorRef = useRef(null);
   const getWasmModule = () => (typeof Module !== "undefined" ? Module : null);
 
@@ -197,9 +201,9 @@ export default function App() {
     });
   };
 
-  // --- WASM Runner Context Execution ---
-  // --- WASM Runner Context Execution ---
   const executeProgram = () => {
+    if (isRunning) return;
+
     const wasmModule = getWasmModule();
     if (!wasmModule || !wasmModule.Interpreter)
       return alert("WASM Core initialization is not complete.");
@@ -212,10 +216,13 @@ export default function App() {
 
     if (program.length === 0) return;
 
+    // Set execution flags
+    setIsRunning(true);
+    stopRequestedRef.current = false;
+
     const interpreter = new wasmModule.Interpreter();
     const cpu = new wasmModule.CPU();
 
-    // Register all custom block shapes with the WASM engine
     Object.keys(savedOpcodes).forEach((name) => {
       interpreter.register_instruction(name);
       savedOpcodes[name].sequence.forEach((p) => {
@@ -230,39 +237,39 @@ export default function App() {
       });
     });
 
-    let safetyCounter = 0;
-    const maxCycles = 20000;
+    const stepsPerBatch = 2000; // Chunk size per batch
+    let lastUiUpdateTime = performance.now();
 
-    while (cpu.pc < program.length && safetyCounter < maxCycles) {
-      const line = program[cpu.pc];
-      const parts = line.replace(/,/g, " ").trim().split(/\s+/);
-      const opName = parts[0].toUpperCase();
-
-      // 1. Check if the parsed opcode is valid natively or in custom blocks
-      const isCustomOpcode = savedOpcodes[opName] !== undefined;
-
-      if (!isCustomOpcode) {
-        alert(`file.asm:${cpu.pc + 1}: error: instruction expected`);
-        interpreter.delete();
-        cpu.delete();
+    const runBatch = () => {
+      if (stopRequestedRef.current) {
+        finalizeProgramState();
         return;
       }
 
-      const args = new wasmModule.VectorInt();
-      let validationFailed = false;
-      const customOpDef = savedOpcodes[opName];
+      let stepsThisBatch = 0;
 
-      // 2. Loop through every token argument on the line
-      for (let i = 1; i < parts.length; i++) {
-        let valStr = parts[i].toUpperCase().replace(/[^0-9A-Z-]/g, "");
-        let expectsImmediate = false;
+      while (cpu.pc < program.length && stepsThisBatch < stepsPerBatch) {
+        const line = program[cpu.pc];
+        const parts = line.replace(/,/g, " ").trim().split(/\s+/);
+        const opName = parts[0].toUpperCase();
 
-        // Map token index back to 0-based argument position index
-        const argIdx = i - 1;
+        const isCustomOpcode = savedOpcodes[opName] !== undefined;
 
-        if (isCustomOpcode && customOpDef) {
-          // Look into the block's blueprint to see if any child primitive uses this position as an IMM
-          expectsImmediate = customOpDef.sequence.some((p) => {
+        if (!isCustomOpcode) {
+          alert(`file.asm:${cpu.pc + 1}: error: instruction expected`);
+          cleanupAndReset();
+          return;
+        }
+
+        const args = new wasmModule.VectorInt();
+        let validationFailed = false;
+        const customOpDef = savedOpcodes[opName];
+
+        for (let i = 1; i < parts.length; i++) {
+          let valStr = parts[i].toUpperCase().replace(/[^0-9A-Z-]/g, "");
+          const argIdx = i - 1;
+
+          const expectsImmediate = customOpDef.sequence.some((p) => {
             if (p.type === "MOVI" && p.arg_indices[1] === argIdx) return true;
             if (
               (p.type === "JMP" ||
@@ -273,74 +280,84 @@ export default function App() {
               return true;
             return false;
           });
-        } else if (isPrimitive) {
-          // Native primitive rules fallback
-          if (opName === "MOVI" && i === 2) expectsImmediate = true;
-          if (
-            (opName === "JMP" || opName === "JMP_EQ" || opName === "JMP_NE") &&
-            i === 1
-          )
-            expectsImmediate = true;
+
+          if (expectsImmediate) {
+            let constantVal = parseInt(valStr, 10);
+            if (isNaN(constantVal)) {
+              alert(
+                `file.asm:${cpu.pc + 1}: error: expected immediate value or constant, got "${parts[i]}"`,
+              );
+              validationFailed = true;
+              break;
+            }
+            args.push_back(constantVal);
+          } else {
+            if (!valStr.startsWith("R")) {
+              alert(
+                `file.asm:${cpu.pc + 1}: error: invalid combination of opcode and operands`,
+              );
+              validationFailed = true;
+              break;
+            }
+
+            let regIndex = parseInt(valStr.substring(1), 10);
+            if (isNaN(regIndex) || regIndex < 0 || regIndex > 15) {
+              alert(
+                `file.asm:${cpu.pc + 1}: error: register name out of range (unknown register "${parts[i]}")`,
+              );
+              validationFailed = true;
+              break;
+            }
+            args.push_back(regIndex);
+          }
         }
 
-        // 3. Route token parsing based on what type the argument is supposed to be
-        if (expectsImmediate) {
-          let constantVal = parseInt(valStr, 10);
-          if (isNaN(constantVal)) {
-            alert(
-              `file.asm:${cpu.pc + 1}: error: expected immediate value or constant, got "${parts[i]}"`,
-            );
-            validationFailed = true;
-            break;
-          }
-          args.push_back(constantVal);
-        } else {
-          // Must be a register token string configuration
-          if (!valStr.startsWith("R")) {
-            alert(
-              `file.asm:${cpu.pc + 1}: error: invalid combination of opcode and operands`,
-            );
-            validationFailed = true;
-            break;
-          }
-
-          let regIndex = parseInt(valStr.substring(1), 10);
-          if (isNaN(regIndex) || regIndex < 0 || regIndex > 15) {
-            alert(
-              `file.asm:${cpu.pc + 1}: error: register name out of range (unknown register "${parts[i]}")`,
-            );
-            validationFailed = true;
-            break;
-          }
-          args.push_back(regIndex);
+        if (validationFailed) {
+          args.delete();
+          cleanupAndReset();
+          return;
         }
-      }
 
-      // Check loop status conditions before advancing interpreter execution frame
-      if (validationFailed) {
+        interpreter.step(cpu, opName, args);
         args.delete();
-        interpreter.delete();
-        cpu.delete();
-        return;
+        stepsThisBatch++;
       }
 
-      // 4. Safely step execution inside the C++ runtime
-      interpreter.step(cpu, opName, args);
-      args.delete();
-      safetyCounter++;
-    }
+      if (cpu.pc >= program.length) {
+        finalizeProgramState();
+      } else {
+        const now = performance.now();
+        if (now - lastUiUpdateTime >= 1000) {
+          const intermediateRegs = [];
+          for (let r = 0; r < 16; r++) {
+            intermediateRegs.push(cpu.get_reg(r));
+          }
+          setRegs(intermediateRegs);
+          setFlags({ z: cpu.flag_z, n: cpu.flag_n });
+          lastUiUpdateTime = now;
+        }
 
-    // 5. Update UI reactive context states with finalized processor values
-    const updatedRegs = [];
-    for (let r = 0; r < 16; r++) {
-      updatedRegs.push(cpu.get_reg(r));
-    }
-    setRegs(updatedRegs);
-    setFlags({ z: cpu.flag_z, n: cpu.flag_n });
+        setTimeout(runBatch, 0);
+      }
+    };
 
-    // Clean up instances completely
-    interpreter.delete();
-    cpu.delete();
+    const finalizeProgramState = () => {
+      const updatedRegs = [];
+      for (let r = 0; r < 16; r++) {
+        updatedRegs.push(cpu.get_reg(r));
+      }
+      setRegs(updatedRegs);
+      setFlags({ z: cpu.flag_z, n: cpu.flag_n });
+      cleanupAndReset();
+    };
+
+    const cleanupAndReset = () => {
+      interpreter.delete();
+      cpu.delete();
+      setIsRunning(false);
+    };
+
+    runBatch();
   };
 
   return (
@@ -366,6 +383,16 @@ export default function App() {
           >
             <span className="text-base">🏁</span>
             {engineReady ? "Go / Run Script" : "Loading Runtime..."}
+          </button>
+          <span className="text-gray-400/40">|</span>
+          <button
+            onClick={() => {
+              stopRequestedRef.current = true;
+            }}
+            className="flex items-center gap-1.5 font-bold px-4 py-1.5 rounded-full text-sm bg-rose-600 hover:bg-rose-500 text-white cursor-pointer active:scale-95 shadow-lg shadow-rose-900/20 transition-all"
+          >
+            <span className="text-xs">🛑</span>
+            Stop Script
           </button>
         </div>
       </header>
