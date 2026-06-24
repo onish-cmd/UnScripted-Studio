@@ -208,6 +208,9 @@ export default function App() {
     if (!wasmModule || !wasmModule.Interpreter)
       return alert("WASM Core initialization is not complete.");
 
+    setRegs(Array(16).fill(0));
+    setFlags({ z: false, n: false });
+
     const srcText = assemblyEditorRef.current?.value || "";
     const program = srcText
       .split("\n")
