@@ -379,7 +379,7 @@ export default function App() {
       <header className="bg-slate-900 border-b border-slate-800 p-3 flex justify-between items-center shadow-md z-10">
         <div className="flex items-center gap-4">
           <span className="font-bold text-lg tracking-wide text-blue-400">
-            Unscripted Blocks Studio
+            UnScripted Studio
           </span>
         </div>
 
