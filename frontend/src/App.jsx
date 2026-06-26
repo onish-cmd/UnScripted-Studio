@@ -33,6 +33,18 @@ const PRIMITIVE_CONFIG = {
     group: "Operators",
     color: "bg-[#5CB85C] text-white border-[#4cae4c]",
   },
+  MUL: {
+    args: 3,
+    labels: ["", "=", "*"],
+    group: "Operators",
+    color: "bg-[#5CB85C] text-white border-[#4cae4c]",
+  },
+  DIV: {
+    args: 3,
+    labels: ["", "=", "/"],
+    group: "Operators",
+    color: "bg-[#5CB85C] text-white border-[#4cae4c]",
+  },
   CMP: {
     args: 2,
     labels: ["compare", "with"],
@@ -81,6 +93,13 @@ const PRIMITIVE_CONFIG = {
     group: "Control",
     color: "bg-[#FFBF00] text-white border-[#e6ac00]",
   },
+  SLEEP: {
+    args: 1,
+    labels: ["sleep for"],
+    suffix: "ms",
+    group: "Control",
+    color: "bg-[#FFBF00] text-white border-[#e6ac00]",
+  },
 };
 
 export default function App() {
@@ -89,6 +108,8 @@ export default function App() {
   const [flags, setFlags] = useState({ z: false, n: false });
   const [engineReady, setEngineReady] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const isSleepingRef = useRef(false);
+  const sleepWakeTimeRef = useRef(0);
 
   // Custom Opcode Builder States
   const [savedOpcodes, setSavedOpcodes] = useState({});
@@ -232,6 +253,15 @@ export default function App() {
     Object.keys(savedOpcodes).forEach((name) => {
       interpreter.register_instruction(name);
       savedOpcodes[name].sequence.forEach((p) => {
+        if (p.type === "SLEEP") return;
+
+        if (!window.Module.OpType[p.type]) {
+          console.error(
+            `Error: Primitive type "${p.type}" is missing from window.Module.OpType bindings!`,
+          );
+          return;
+        }
+
         const indices = new wasmModule.VectorInt();
         p.arg_indices.forEach((idx) => indices.push_back(idx));
         interpreter.add_primitive_to_instruction(
@@ -283,11 +313,29 @@ export default function App() {
           const argIdx = i - 1;
 
           const expectsImmediate = customOpDef.sequence.some((p) => {
+            if (!p) {
+              console.error(
+                `CRITICAL ERROR:\n` +
+                  `Instruction definition "${opName}" contains an completely NULL primitive step at sequence index #${stepIdx}.`,
+              );
+              return false;
+            }
+
+            if (!p.type) {
+              console.error(
+                `CRITICAL ERROR:\n` +
+                  `Instruction definition "${opName}" contains a corrupted primitive step at sequence index #${stepIdx} (missing 'type' property).\n` +
+                  `Target Block Dump:`,
+                p,
+              );
+              return false;
+            }
             if (p.type === "MOVI" && p.arg_indices[1] === argIdx) return true;
             if (
               (p.type === "JMP" ||
                 p.type === "JMP_EQ" ||
-                p.type === "JMP_NE") &&
+                p.type === "JMP_NE" ||
+                p.type == "SLEEP") &&
               p.arg_indices[0] === argIdx
             )
               return true;
@@ -331,6 +379,29 @@ export default function App() {
           return;
         }
 
+        if (opName === "SLEEP") {
+          const msValue = parseInt(parts[1], 10);
+          const updatedRegs = [];
+          for (let r = 0; r < 16; r++) {
+            updatedRegs.push(cpu.get_reg(r));
+          }
+          setRegs(updatedRegs);
+          setFlags({ z: cpu.flag_z, n: cpu.flag_n });
+          if (isNaN(msValue) || msValue < 0) {
+            alert(
+              `file.asm:${cpu.pc + 1}: error: sleep requires a non-negative integer millisecond constant`,
+            );
+            cleanupAndReset();
+            return;
+          }
+
+          sleepWakeTimeRef.current = performance.now() + msValue;
+          isSleepingRef.current = true;
+
+          cpu.pc += 1;
+          break;
+        }
+
         interpreter.step(cpu, opName, args);
         args.delete();
         stepsThisBatch++;
@@ -350,7 +421,16 @@ export default function App() {
           lastUiUpdateTime = now;
         }
 
-        setTimeout(runBatch, 0);
+        if (isSleepingRef.current) {
+          const remainingSleepTime = Math.max(
+            0,
+            sleepWakeTimeRef.current - performance.now(),
+          );
+          isSleepingRef.current = false; // Reset flag right before scheduling wake batch
+          setTimeout(runBatch, remainingSleepTime);
+        } else {
+          setTimeout(runBatch, 0);
+        }
       }
     };
 
@@ -531,6 +611,12 @@ export default function App() {
                         </select>
                       </div>
                     ))}
+
+                    {PRIMITIVE_CONFIG[prim.type].suffix && (
+                      <span className="text-xs text-white/90 ml-0.5">
+                        {PRIMITIVE_CONFIG[prim.type].suffix}
+                      </span>
+                    )}
                   </div>
 
                   <button

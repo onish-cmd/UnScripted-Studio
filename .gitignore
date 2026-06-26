@@ -38,3 +38,6 @@ frontend/pnpm-debug.log*
 *.exe
 build/
 bin/
+
+# --- XMake ---
+include/.xmake

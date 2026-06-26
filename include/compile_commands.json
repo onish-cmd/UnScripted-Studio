@@ -1,0 +1,15 @@
+[
+  {
+    "directory": "/home/onish/UnScripted-Studio/include",
+    "arguments": [
+      "/usr/lib/emscripten/emcc",
+      "-c",
+      "-fPIC",
+      "-O3",
+      "-o",
+      "build/.objs/unscripted_core/wasm/wasm32/release/main.cpp.o",
+      "main.cpp"
+    ],
+    "file": "main.cpp"
+  }
+]

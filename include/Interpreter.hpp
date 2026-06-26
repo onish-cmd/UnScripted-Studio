@@ -36,7 +36,9 @@ enum class OpType {
   STORE,
   JMP,
   JMP_EQ,
-  JMP_NE
+  JMP_NE,
+  MUL,
+  DIV
 };
 
 struct Primitive {
@@ -101,21 +103,38 @@ public:
         memory[addr] = regs[src];
       break;
     }
-    case OpType::JMP:
+    case OpType::JMP: {
       pc = instr_args[p.arg_indices[0]];
       break;
-    case OpType::JMP_EQ:
+    }
+    case OpType::JMP_EQ: {
       if (flag_z)
         pc = instr_args[p.arg_indices[0]];
       break;
-    case OpType::JMP_NE:
+    }
+    case OpType::JMP_NE: {
       if (!flag_z)
         pc = instr_args[p.arg_indices[0]];
       break;
+    }
     case OpType::MOVI: {
       int32_t dest = instr_args[p.arg_indices[0]];
       int32_t imm = instr_args[p.arg_indices[1]];
       regs[dest] = imm;
+      break;
+    }
+    case OpType::MUL: {
+      int32_t dest = instr_args[p.arg_indices[0]];
+      int32_t src1 = instr_args[p.arg_indices[1]];
+      int32_t src2 = instr_args[p.arg_indices[2]];
+      regs[dest] = regs[src1] * regs[src2];
+      break;
+    }
+    case OpType::DIV: {
+      int32_t dest = instr_args[p.arg_indices[0]];
+      int32_t src1 = instr_args[p.arg_indices[1]];
+      int32_t src2 = instr_args[p.arg_indices[2]];
+      regs[dest] = regs[src1] / regs[src2];
       break;
     }
     }
@@ -169,7 +188,9 @@ EMSCRIPTEN_BINDINGS(unscripted_studio) {
       .value("STORE", OpType::STORE)
       .value("JMP", OpType::JMP)
       .value("JMP_EQ", OpType::JMP_EQ)
-      .value("JMP_NE", OpType::JMP_NE);
+      .value("JMP_NE", OpType::JMP_NE)
+      .value("MUL", OpType::MUL)
+      .value("DIV", OpType::DIV);
 
   register_vector<int32_t>("VectorInt");
 
