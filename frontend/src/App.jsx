@@ -312,7 +312,7 @@ export default function App() {
           let valStr = parts[i].toUpperCase().replace(/[^0-9A-Z-]/g, "");
           const argIdx = i - 1;
 
-          const expectsImmediate = customOpDef.sequence.some((p) => {
+          customOpDef.sequence.forEach((p, stepIdx) => {
             if (!p) {
               console.error(
                 `CRITICAL ERROR:\n` +
@@ -391,6 +391,7 @@ export default function App() {
             alert(
               `file.asm:${cpu.pc + 1}: error: sleep requires a non-negative integer millisecond constant`,
             );
+            args.delete();
             cleanupAndReset();
             return;
           }
@@ -399,6 +400,7 @@ export default function App() {
           isSleepingRef.current = true;
 
           cpu.pc += 1;
+          args.delete();
           break;
         }
 
@@ -591,7 +593,7 @@ export default function App() {
                       >
                         {label && <span>{label}</span>}
                         <select
-                          value={prim.arg_indices[i] || 0}
+                          value={prim.arg_indices[i] ?? 0}
                           onChange={(e) =>
                             handleArgChange(prim.id, i, e.target.value)
                           }
